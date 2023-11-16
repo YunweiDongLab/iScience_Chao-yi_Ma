@@ -1,0 +1,239 @@
+##### Phylogeny orthogroups analysis #####
+# 1. For Mollusca Phylum
+orthofinder.py -f ./1_Mollusca_evolution -t 64 -a 32 -M msa -y
+# 2. For Metazoa Kingdom
+orthofinder.py -f ./2_Metazoa_evolution -t 64 -a 24 -y -M msa -s Metazoa_tree.txt
+# Content in Metazoa_tree.txt
+(Amphimedon_queenslandica,((((Trichoplax_adhaerens,Trichoplax_sp),(Nematostella_vectensis,(Hydra_vulgaris,Rhopilema_esculentum))),(((Saccoglossus_kowalevskii,(Anneissia_japonica,(Asterias_rubens,(Lytechinus_variegatus,Holothuria_leucospilota)))),(Branchiostoma_belcheri,((Ciona_intestinalis,Styela_clava),(Petromyzon_marinus,(Carcharodon_carcharias,(Erpetoichthys_calabaricus,(Protopterus_annectens,Homo_sapiens))))))),(((Rotaria_socialis,Macrostomum_lignano),((Octopus_sinensis,(Pomacea_canaliculata,(Dreissena_polymorpha,Pteria_penguin))),((Helobdella_robusta,Owenia_fusiformis),Lingula_anatina))),(Priapulus_caudatus,(Brugia_malayi,(Epiperipatus_broadwayi,(Paramacrobiotus_metropolitanus,((Limulus_polyphemus,Dermacentor_silvarum),(Notodromas_monacha,((Eriocheir_sinensis,(Lepeophtheirus_salmonis,Amphibalanus_amphitrite)),(Daphnia_magna,(Folsomia_candida,Drosophila_melanogaster))))))))))))));
+
+###### Divergent time for Pteria penguin #####
+export PATH_TO_ORTHOFINDER_RESULTES=/data/MCY/Ppe_TIMP/1_orthofinder/1_Mollusca_evolution/OrthoFinder/Results_May20
+cat ${PATH_TO_ORTHOFINDER_RESULTES}/MultipleSequenceAlignments/SpeciesTreeAlignment.fa |sed 's/U/X/g' |tr '\n' '\t'|sed 's/>/\n/g' |sed 's/\t/      /'|sed 's/\t//g'| awk 'NF > 0' >SpeciesTreeAlignment.phy.tmp
+awk '{print NR" "length($2)}'  SpeciesTreeAlignment.phy.tmp|tail -n 1 | cat - SpeciesTreeAlignment.phy.tmp > SpeciesTreeAlignment.phy
+# Two circles of MCMCtree running
+# 1. Circle1 mcmctree1.ctl
+seed = -1
+seqfile = SpeciesTreeAlignment.phy
+treefile = Mollusca_rooted_with_fossil_record.txt
+mcmcfile = mcmc1.txt
+outfile = out_usedata3
+ndata = 1
+seqtype = 2 * 0: nucleotides; 1:codons; 2:AAs
+usedata = 3 * 0: no data; 1:seq like; 2:normal approximation; 3:out.BV (in.BV)
+clock = 2 * 1: global clock; 2: independent rates; 3: correlated rates
+RootAge = '<7.0' * safe constraint on root age, used if no fossil for root.
+model = 3 * 0:JC69, 1:K80, 2:F81, 3:F84, 4:HKY85
+aaRatefile = lg.dat 
+alpha = 0.5 * alpha for gamma rates at sites
+ncatG = 5 * No. categories in discrete gamma
+cleandata = 1 * remove sites with ambiguity data (1:yes, 0:no)?
+BDparas = 1 1 0.1 * birth, death, sampling
+kappa_gamma = 6 2 * gamma prior for kappa
+alpha_gamma = 1 1 * gamma prior for alpha
+rgene_gamma = 2 20 1 * gamma prior for rate for genes
+sigma2_gamma = 1 10 1 * gamma prior for sigma^2 (for clock=2 or 3)
+finetune = 1: .1 .1 .1 .1 .1 .1 * auto (0 or 1): times, rates, mixing, paras, RateParas, FossilErr
+print = 1 * 0: no mcmc sample; 1: everything except branch rates 2: everything
+burnin = 1000000
+sampfreq = 10
+nsample = 500000
+
+mcmctree mcmctree1.ctl
+
+#2. tmp0001.ctl
+seqfile = tmp0001.txt
+treefile = tmp0001.trees
+outfile = tmp0001.out
+noisy = 3
+seqtype = 2
+model = 3
+aaRatefile = lg.dat
+fix_alpha = 0
+alpha = 0.5
+ncatG = 5
+Small_Diff = 0.1e-6
+getSE = 2
+method = 1
+
+codeml tmp0001.ctl
+
+#3. mcmctree2.ctl
+seed = -1
+seqfile = SpeciesTreeAlignment.phy
+treefile = Mollusca_rooted_with_fossil_record.txt
+mcmcfile = mcmc2.txt
+outfile = out_usedata2
+ndata = 1
+seqtype = 2 * 0: nucleotides; 1:codons; 2:AAs
+usedata = 2 * 0: no data; 1:seq like; 2:normal approximation; 3:out.BV (in.BV)
+clock = 2 * 1: global clock; 2: independent rates; 3: correlated rates
+RootAge = '<7.0' * safe constraint on root age, used if no fossil for root.
+model = 3 * 0:JC69, 1:K80, 2:F81, 3:F84, 4:HKY85
+aaRatefile = lg.dat 
+alpha = 0.5 * alpha for gamma rates at sites
+ncatG = 5 * No. categories in discrete gamma
+cleandata = 1 * remove sites with ambiguity data (1:yes, 0:no)?
+BDparas = 1 1 0.1 * birth, death, sampling
+kappa_gamma = 6 2 * gamma prior for kappa
+alpha_gamma = 1 1 * gamma prior for alpha
+rgene_gamma = 2 20 1 * gamma prior for rate for genes
+sigma2_gamma = 1 10 1 * gamma prior for sigma^2 (for clock=2 or 3)
+finetune = 1: .1 .1 .1 .1 .1 .1 * auto (0 or 1): times, rates, mixing, paras, RateParas, FossilErr
+print = 1 * 0: no mcmc sample; 1: everything except branch rates 2: everything
+burnin = 1000000
+sampfreq = 10
+nsample = 500000
+
+# Content in Mollusca_rooted_with_fossil_record.txt
+18 1
+(L_ana,((O_sin,N_pom),(((H_ruf,L_gig),(P_can,(A_cal,(P_oce,(C_uni,B_tru)))'B(1.686, 4.734, 1e-300, 0.1)')'L(3.90, 0.1, 1.0, 1e-300)')'B(4.702, 5.315, 1e-300, 0.1)',((M_yes,((P_pen,M_gig),M_cal)'L(4.19, 0.1, 1.0, 1e-300)')'L(4.65, 0.1, 1.0, 1e-300)',(((M_are,D_pol),M_mer),M_mar)))'L(5.20, 0.1, 1.0, 1e-300)')'B(5.32, 5.49, 1e-300, 0.1)')'B(5.5025, 6.361, 1e-300, 1e-300)';
+
+
+###### Cafe5 for gene family expansion and contraction analysis #####
+awk 'OFS="\t" {$NF=""; print}' PHO_N0.txt > tmp && awk '{print "(null)""\t"$0}' tmp > cafe.input_PHO_N0.tsv && sed -i '1s/(null)/Desc/g' cafe.input_PHO_N0.tsv && rm tmp
+python ~/App/CAFE5/tutorial/clade_and_size_filter.py -i cafe.input_PHO_N0.tsv -o filtered.cafe.input_PHO_N0.tsv -s
+
+#k3
+cafe5 -c 48 -p -k 3 -i filtered.cafe.input_PHO_N0.tsv -t cafe_input_tree_N0.txt -o N0_k3
+#k4
+cafe5 -c 48 -p -k 4 -i filtered.cafe.input_PHO_N0.tsv -t cafe_input_tree_N0.txt -o N0_k4
+
+# Select Results in k3
+==> N0_k3/Gamma_results.txt <==
+Model Gamma Final Likelihood (-lnL): 254497
+
+==> N0_k4/Gamma_results.txt <==
+Model Gamma Final Likelihood (-lnL): 254335
+
+# Find siginificant family
+grep "y" Gamma_family_results.txt > Significant_families.txt
+cut -f1 Significant_families.txt | grep -v "^#" > Significant_families_ID.txt
+
+cut -f 1,13 ../Gamma_change.tab | grep -v "-" | awk '$2 != 0' > P_pen_expanded.hogs
+cut -f 1,13 ../Gamma_change.tab | grep "-" > P_pen_contracted.hogs
+grep "P_pen<12>\*" ../Gamma_asr.tre > P_pen_significant_trees.tre
+grep -E -o "N0.HOG[0-9]+" P_pen_significant_trees.tre > P_pen_p0.05_significant.hogs
+awk '$2 <0.05 {print $1}' ../Gamma_family_results.txt > p0.05_significant.hogs
+grep -f P_pen_p0.05_significant.hogs P_pen_expanded.hogs |cut -f1 > P_pen_expanded_p0.05_significant.hogs
+ln -s /data/MCY/Ppe_TIMP/1_orthofinder/1_Mollusca_evolution/OrthoFinder/Results_May20/Phylogenetic_Hierarchical_Orthogroups/N0.tsv
+grep -f P_pen_expanded_p0.05_significant.hogs N0.tsv | cut -f 21 | sed "s/, /\n/g" | grep "mRNA" | sort | uniq > P_pen_expanded_p0.05_significant.genes
+grep -f P_pen_contracted_p0.05_significant.hogs N0.tsv | cut -f 21 | sed "s/, /\n/g" | grep "mRNA" | sort | uniq > P_pen_contracted_p0.05_significant.genes
+
+cut -f 1,33 ../Gamma_change.tab | grep -v "-" | awk '$2 != 0' > clade32_expanded.hogs
+cut -f 1,33 ../Gamma_change.tab | grep "-" > clade32_contracted.hogs
+grep "<32>\*" ../Gamma_asr.tre > clade32_significant_trees.tre
+grep -E -o "N0.HOG[0-9]+" clade32_significant_trees.tre > clade32_p0.05_significant.hogs
+awk '$2 <0.05 {print $1}' ../Gamma_family_results.txt > p0.05_significant.hogs
+grep -f clade32_p0.05_significant.hogs clade32_expanded.hogs |cut -f1 > clade32_expanded_p0.05_significant.hogs
+grep -f clade32_p0.05_significant.hogs clade32_contracted.hogs |cut -f1 > clade32_contracted_p0.05_significant.hogs
+ln -s /data/MCY/Ppe_TIMP/1_orthofinder/1_Mollusca_evolution/OrthoFinder/Results_May20/Phylogenetic_Hierarchical_Orthogroups/N0.tsv
+grep -f clade32_expanded_p0.05_significant.hogs N0.tsv | cut -f 21 | sed "s/, /\n/g" | grep "mRNA" | sort | uniq > clade32_expanded_p0.05_significant.genes
+grep -f clade32_contracted_p0.05_significant.hogs N0.tsv | cut -f 21 | sed "s/, /\n/g" | grep "mRNA" | sort | uniq > clade32_contracted_p0.05_significant.genes
+
+##### Find TIMP gene family #####
+### For mollusca ###
+for i in *fa
+	do
+	hmmsearch -o ${i}.out -E 1e-5 --noali --cpu 4 ${hmm_PATH}/TIMP_PF00965.20.hmm ${i}
+	done
+
+ls *out | sed "s/.fa.out//g" > mollusca_name.list
+cat mollusca_name.list | while read f
+do
+	grep ">>" ${f}.fa.out | cut -f2 -d " " | seqkit grep -n -f - ${f}.fa | seqkit rmdup -s - | sed "s/>/>${f}_/g" > ${f}_TIMP_hmmsearch.fa
+done
+
+ls *fa | sed "s/_TIMP_hmmsearch.fa//g" > mollusca_TIMP_hmmsearch.list
+
+cat mollusca_TIMP_hmmsearch.list | while read i
+do
+	interproscan.sh -f TSV -i ${i}_TIMP_hmmsearch.fa -cpu 4 -b ${i}_TIMP_interproscan
+done
+
+grep -w -f mollusca_TIMP_candidate2.list N0.tsv > tmp.tsv
+head -n1 N0.tsv > head.tsv
+cat head.tsv tmp.tsv > mollusca_TIMP_orthogroup.tsv
+rm tmp.tsv
+#find HOG0001471/OG0000659 is the TIMP root orthogroup in mollusca
+grep HOG0001471 mollusca_TIMP_orthogroup.tsv | cut -f 4-21 | sed "s/\t/\n/g" | sed "s/, /\n/g" | grep -v "^$" | sort | uniq > HOG0001471_orthogroup.list
+cat mollusca_TIMP_candidate2.list HOG0001471_orthogroup.list | sort | uniq -d > mollusca_TIMP_HOG0001471.list
+grep -F -f mollusca_TIMP_HOG0001471.list ../1_hmmsearch/Mollusca_TIMP_hmmsearch.fa | sort | uniq | sed "s/>//g" | seqkit grep -n -f - ../1_hmmsearch/Mollusca_TIMP_hmmsearch.fa > Mollusca_TIMP_HOG0001471.fa
+#find potential TIMP
+seqkit grep -n -f mollusca_TIMP_potential.list ../1_hmmsearch/Mollusca_TIMP_hmmsearch.fa > Mollusca_TIMP_potential.fa
+grep -v -f mollusca_TIMP_candidate.list mollusca_TIMP_potential.list > mollusca_TIMP_pesudo.list
+grep -f mollusca_TIMP_HOG0001471.list mollusca_TIMP_candidate.list > mollusca_TIMP_core.list
+grep -v -f mollusca_TIMP_core.list mollusca_TIMP_candidate.list > mollusca_TIMP_species-specific.list
+grep ">" iqtree_mollusca/Mollusca_TIMP_HOG0001471_clean.fa | sed "s/>//g" > mollusca_core_53_TIMPs.list
+grep -E -w -f mollusca_core_53_TIMPs.list ../2_interproscan/mollusc_SMART_info.tsv | cut -f 1,6,7,8 > mollusca_core_53_NTR_domain.tsv
+
+# L-INS-i
+~/App/mafft-7.505/bin/mafft --auto Mollusca_TIMP_potential.fa > Mollusca_TIMP_potential_align.fa
+nohup ~/App/iqtree-2.2.0-Linux/bin/iqtree2 -s Mollusca_TIMP_potential_align.fa -m MFP -B 10000 -alrt 1000 --bnni -T 52 -o L_ana_XP_013388799.2,L_ana_XP_013408084.1 &
+
+# L-INS-i
+~/App/mafft-7.505/bin/mafft --auto Mollusca_TIMP_HOG0001471_clean.fa > Mollusca_TIMP_HOG0001471_clean_align.fa
+~/App/trimAl/source/trimal -in Mollusca_TIMP_HOG0001471_clean_align.fa -out Mollusca_TIMP_HOG0001471_clean_trimal.fa -automated1
+sed "s/ 152 bp//g" Mollusca_TIMP_HOG0001471_clean_trimal.fa > Mollusca_TIMP_HOG0001471_clean_trimal_clean.fa
+nohup ~/App/iqtree-2.2.0-Linux/bin/iqtree2 -s Mollusca_TIMP_HOG0001471_clean_align.fa -m MFP -B 10000 -alrt 1000 --bnni -T AUTO --threads-max 48 -o L_ana_XP_013388799.2,L_ana_XP_013408084.1 &
+nohup ~/App/iqtree-2.2.0-Linux/bin/iqtree2 -s Mollusca_TIMP_HOG0001471_clean_trimal_clean.fa -m MFP -B 10000 -alrt 1000 --bnni -T AUTO --threads-max 48 -o L_ana_XP_013388799.2,L_ana_XP_013408084.1 &
+
+
+### For metazoa ### 
+for i in *fa
+	do
+	hmmsearch -o ${i}.out -E 1e-5 --noali --cpu 4 ${hmm_PATH}/TIMP_PF00965.20.hmm ${i}
+	done
+ls *out | sed "s/.fa.out//g" > metazoa_name.list
+cat metazoa_name.list | while read f
+do
+	grep ">>" ${f}.fa.out | cut -f2 -d " " | seqkit grep -n -f - ${f}.fa | seqkit rmdup -s - | sed "s/>/>${f}_/g" > ${f}_TIMP_hmmsearch.fa
+done
+
+ls *fa | sed "s/_TIMP_hmmsearch.fa//g" > metazoa_TIMP_hmmsearch.list
+
+cat metazoa_TIMP_hmmsearch.list | while read i
+do
+	interproscan.sh -f TSV -i ${i}_TIMP_hmmsearch.fa -cpu 4 -b ${i}_TIMP_interproscan
+done
+
+# L-INS-i
+~/App/mafft-7.505/bin/mafft --auto Metazoa_TIMP_potential.fa > Metazoa_TIMP_potential_align.fa
+nohup ~/App/iqtree-2.2.0-Linux/bin/iqtree2 -s Metazoa_TIMP_potential_align.fa -m MFP -B 10000 -alrt 1000 --bnni -T 52 -o Trichoplax_adhaerens_XP_002113109.1,Trichoplax_sp_RDD44554.1 &
+
+# L-INS-i
+~/App/mafft-7.505/bin/mafft --auto Metazoa_TIMP_HOG0001662.fa > Metazoa_TIMP_HOG0001662_mafft.fa
+~/App/trimAl/source/trimal -in Metazoa_TIMP_HOG0001662_mafft.fa -out Metazoa_TIMP_HOG0001662_trimal.fa -automated1
+sed "s/ 89 bp//g" Metazoa_TIMP_HOG0001662_trimal.fa > Metazoa_TIMP_HOG0001662_trimal_clean.fa
+nohup ~/App/iqtree-2.2.0-Linux/bin/iqtree2 -s Metazoa_TIMP_HOG0001662_mafft.fa -m MFP -B 10000 -alrt 1000 --bnni -T AUTO --threads-max 24 &
+nohup ~/App/iqtree-2.2.0-Linux/bin/iqtree2 -s Metazoa_TIMP_HOG0001662_trimal_clean.fa -m MFP -B 10000 -alrt 1000 --bnni -T AUTO --threads-max 24 &
+
+##### Find gene structure (exon number, gene length...) #####
+cat metazoa_TIMP_hmmsearch.list | while read i
+do
+grep ${i} metazoa_TIMP_potential.list | sed "s/${i}_//g" > ${i}/${i}_potential.list
+grep -f ${i}/${i}_potential.list ../0_gff/metazoa_gff/${i}.gff | cut -f9 | sort | uniq | cut -f6 -d ";" | sed "s/gene=//g" > ${i}/${i}_gene.list
+grep -f ${i}/${i}_gene.list ../0_gff/metazoa_gff/${i}.gff > ${i}/${i}_all.gff3
+cat ${i}/${i}_all.gff3 | awk '$3=="gene"||$3=="exon"' | cut -f9,3,4,5 | sed 's/ID=.*gene=//g' | sed 's/;.*$//g' | awk '{print $4,$1,$2,$3}' | sort -k1 | uniq> ${i}/${i}_exon_gene_potential.gff3
+grep -f ${i}/${i}_potential.list ${i}/${i}_all.gff3 | cut -f9 | sort  | uniq | sed "s/ID.*gene=//g" | sed "s/;.*protein_id=/\t/g" | sort -k1 | uniq > gene_pro.list
+join -j1 gene_pro.list ${i}/${i}_exon_gene_potential.gff3 | sed "s/ /\t/g" | cut -f 2,3,4,5 | sed "s/^/${i}_/g" > ${i}/${i}_pro.gff3
+grep gene ${i}/${i}_pro.gff3 | awk '{print $1,($4-$3+1)}' | sort -k1 > ${i}/${i}_gene_length.txt
+grep gene ${i}/${i}_pro.gff3 | awk '{print $1,$3}' | sort -k1 > ${i}/${i}_gene_start.txt
+grep exon ${i}/${i}_pro.gff3 | sort -k1 | join -j1 - ${i}/${i}_gene_start.txt | awk '{print $1,$2,$3-$5+1,$4-$5+1}' > ${i}/${i}_gene_structure.txt
+done
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

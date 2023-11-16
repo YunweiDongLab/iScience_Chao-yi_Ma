@@ -1,0 +1,134 @@
+##### Do the Genome Survey Using Illumina Short Reads #####
+# Jellyfish v2.3.0 https://github.com/gmarcais/Jellyfish
+# Genomescope2 https://github.com/tbenavi1/genomescope2.0
+# Illumina raw data FDSW202188756-1r_L1_1.fq.gz, FDSW202188756-1r_L1_2.fq.gz
+jellyfish count -C -m 21 -s 1G -t 24 -o 21kmer.jf <(zcat FDSW202188756-1r_L1_1.fq.gz) <(zcat FDSW202188756-1r_L1_2.fq.gz)
+jellyfish histo -t 12 -l 1 -h 1000000 21kmer.jf > 21kmer.histo
+genomescope2 -i 21kmer.histo -o 21kmer_genomescope -k 21 -m -1
+
+##### Do Denovo Genome Assembly #####
+# Transfer the Pacbio Long Reads With .bam File Format Into .fastq File Format
+# bam2fastx https://github.com/PacificBiosciences/bam2fastx
+bam2fastq m64064_201022_084349.subreads -o ppe.subreads.fastq.gz
+
+# Assemble the Pacbio Reads
+# NextDenovo v2.4.0 https://github.com/Nextomics/NextDenovo
+# Primary genome assembly is nd.asm.fasta
+nextDenovo run.cfg
+# Content in run.cfg
+[General]
+job_type = local # local, slurm, sge, pbs, lsf
+job_prefix = next_0317
+task = all # all, correct, assemble
+rewrite = yes # yes/no
+deltmp = yes 
+parallel_jobs = 8 # number of tasks used to run in parallel
+input_type = raw # raw, corrected
+read_type = clr # clr, ont, hifi
+input_fofn = input.fofn
+workdir = 01_rundir
+
+[correct_option]
+read_cutoff = 1k
+genome_size = 850m # estimated genome size
+sort_options = -m 49g -t 7
+minimap2_options_raw = -t 7
+pa_correction = 8 # number of corrected tasks used to run in parallel, each corrected task requires ~TOTAL_INPUT_BASES/4 bytes of memory usage.
+correction_options = -p 7
+
+[assemble_option]
+minimap2_options_cns = -t 7
+nextgraph_options = -a 1
+# Content in input.fofn
+${path_to_Pacbio_reads}/ppe.subreads.fastq.gz
+
+##### Remove Haplotypic Duplication in Primary Genome Assembly
+# purge_dups v1.2.5 https://github.com/dfguan/purge_dups
+# The clean assembly is purged.fa
+minimap2 -t 56 -x map-pb nd.asm.fasta ppe.subreads.fastq.gz | gzip -c - > pb_aln.paf.gz
+pbcstat pb_aln.paf.gz
+calcuts PB.stat > cutoffs > calcuts.log # Run this step for determining the cutoffs values
+calcuts -l 10 -m 110 -u 400 PB.stat > cutoffs2 > calcuts2.log
+split_fa nd.asm.fasta > asm.split
+minimap2 -t 56 -xasm5 -DP asm.split asm.split | gzip -c - > asm.split.self.paf.gz
+purge_dups -2 -T cutoffs2 -c PB.base.cov asm.split.self.paf.gz > dups.bed 2> purge_dups.log
+get_seqs -e dups.bed nd.asm.fasta
+
+##### Polish the clean assembly #####
+# NextPolish v1.4.0 https://github.com/Nextomics/NextPolish
+# fastp https://github.com/OpenGene/fastp
+# Clean the Illumina reads
+fastp -i FDSW202188756-1r_L1_1.fq.gz -I FDSW202188756-1r_L1_2.fq.gz -o cleandata_1.fq.gz -O cleandata_2.fq.gz -q 20 -u 40 --thread 16
+
+# Run the polish step
+# The polished assembly is ndpdnp.fa
+nextPolish run.cfg
+#Cotent in run.cfg
+[General]
+job_type = local
+job_prefix = nextPolish
+task = best
+rewrite = yes
+rerun = 3
+parallel_jobs = 7
+multithread_jobs = 8
+genome = ${path_to_purged.fa}/purged.fa
+genome_size = 845m
+workdir = ./02_rundir
+polish_options = -p {multithread_jobs}
+
+[sgs_option] 
+sgs_fofn = sgs.fofn
+sgs_options = -max_depth 100 -minimap2
+
+# Cotent in sgs.fofn
+${path_to_clean_ Illumina_reads}/cleandata_1.fq.gz
+${path_to_clean_ Illumina_reads}/cleandata_2.fq.gz
+
+##### Elevate the polished assembly to scaffold level #####
+# hic-pipeline https://github.com/esrice/hic-pipeline
+# Combine the HIC reads together
+cat BDHC200000265-1A_L{1..5}_1.fq > hic_R1.fastq.gz
+cat BDHC200000265-1A_L{1..5}_2.fq > hic_R2.fastq.gz
+bwa index ndpdnp.fa
+samtools faidx ndpdnp.fa
+bwa mem -t 24 ndpdnp.fa hic_R1.fastq.gz | samtools view --threads 23 -bh - | python3 ${path_to_hic-pipeline}/filter_chimeras.py - > r1.bam
+bwa mem -t 32 ndpdnp.fa hic_R2.fastq.gz | samtools view --threads 31 -bh - | python3 ${path_to_hic-pipeline}/filter_chimeras.py - > r2.bam
+${path_to_hic-pipeline}/combine_ends.py r1.bam r2.bam -q 10 | samtools fixmate --threads 31 -m - - | samtools sort --threads 31 - | samtools markdup --threads 31 -r - combined.bam
+bamToBed -i combined.bam | sort -k 4 > combined.bed #bedtools
+# SALSA v2.3 https://github.com/pintomollo/SALSA
+# The scaffolded assembly is scaffolds_FINAL.fasta 
+run_pipeline.py -a ndpdnp.fa -l ndpdnp.fa.fai -b combined.bed -e GATC -m yes -o hic_result -i 5
+
+##### Elevate the polished assembly to scaffold level #####
+# juicer v1.6 https://github.com/aidenlab/juicer
+# The output file used for next step is merged_nodups.txt
+#scaffolds.fasta is the symlink to scaffolds_FINAL.fasta
+juicer.sh -g scaffolds -s DpnII \
+-p ${path_to_juicer_working_directory}/restriction_sites/chrom.sizes \
+-y ${path_to_juicer_working_directory}/restriction_sites/scaffolds_DpnII.txt \
+-z ${path_to_juicer_working_directory}/references/scaffolds.fasta \
+-D ${path_to_juicer_working_directory}/ -t 32
+
+# 3d-dna version 190716 https://github.com/aidenlab/3d-dna
+# Run 3d-dna pipeline firstly
+run-asm-pipeline.sh -r 0 --editor-repeat-coverage 5 scaffolds_FINAL.fasta merged_nodups.txt
+
+# Use juicerbox v1.11.08 for manual error correction and get corrected file scaffolds_FINAL.review.assembly
+
+# Run 3d-dna pipeline secondly
+# The output file scaffolds_FINAL_HiC.fasta is the genome assembly at chromosome level.
+# The name of each sequence is replaced by chr1..107. This fixed final genome assembly is ppedb.fasta used for following annotation and analysis.
+run-asm-pipeline-post-review.sh -r scaffolds_FINAL.review.assembly --sort-output -s seal -c 14 scaffolds_FINAL.fasta merged_nodups.txt
+
+
+
+
+
+
+
+
+
+
+
+

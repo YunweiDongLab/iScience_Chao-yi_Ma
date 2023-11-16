@@ -1,0 +1,181 @@
+##### Repeat sequences annotation ##### 
+# Build de novo repeat sequence library.
+# RepeatModeler v2.0.3 http://www.repeatmasker.org/RepeatModeler/
+# The output file used next is ppedb-families.fa
+export PATH=/home/LINE/local/app/RepeatModeler-2.0.3:$PATH
+export PATH=/home/LINE/local/app/RepeatMasker-4.1.2:$PATH
+export PATH=/home/LINE/local/app/RepeatScout-1.0.6:$PATH
+export PATH=/home/LINE/local/app/RECON-1.08/scripts:$PATH
+export PATH=/home/LINE/local/app/RECON-1.08/bin:$PATH
+export PATH=/home/LINE/local/app/trf-4.09.1:$PATH
+export PATH=/home/LINE/local/app/kent:$PATH
+export PATH=/home/LINE/local/app/cdhit-4.8.1:$PATH
+BuildDatabase -name ppedb ppedb.fasta
+RepeatModeler -database ppedb -pa 4 -LTRStruct
+
+# Perform homology annotation and mask the genome 
+# RepeatMasker v4.1.2 http://repeatmasker.org/RepeatMasker/
+# Build homology library
+famdb.py -i RepeatMaskerLib.h5 lineage -ad Bivalvia 
+famdb.py -i RepeatMaskerLib.h5 families -ad Bivalvia -f embl > Bivalvia.embl 
+${path_to_RepeatMasker}/util/buildRMLibFromEMBL.pl Bivalvia.embl > Bivalvia_embl.fasta
+# Mask the genome
+cat ppedb-families.fa Bivalvia_embl.fasta > repeat.fasta
+RepeatMasker -nolow -norna -no_is -e ncbi -pa 5 -lib repeat.fasta -gff -xsmall -dir softmaskred ppedb.fasta
+# Statistical analysis for repeatmasker results.
+buildSummary.pl -species Bivalvia ppedb.fasta.out > ppe_bivalvia.tbl
+
+##### non-coding RNA annotation ##### 
+#  infernal v1.1.4 http://eddylab.org/infernal/
+ln -s /home/LINE/local/app/infernal-1.1.4/Rfam/
+# CMnumbers
+grep "^CM" Rfam/Rfam.cm | wc -l
+# Z=The size of genome (Mb) * 2 * CMnumbers=840*2*4069=6835920
+cmscan -Z 6835920 --cut_ga --rfam --nohmmonly --fmt 2 --tblout ppe_ncRNA.table -o ppe_ncRNA.result --cpu 2 --clanin ./Rfam/Rfam.clanin \ ./Rfam/Rfam.cm ppedb.fasta
+
+##### Gene structure annotation #####
+# RNA-Seq transcriptome assembly based on seven tissues from Pteria penguin.
+# Clean the RNA-seq data.
+fastp -i $RNA/Adductor_1.fq.gz -I $RNA/Adductor_2.fq.gz -o adductor_1.fq.gz -O adductor_2.fq.gz -w 24
+fastp -i $RNA/Byssus_1.fq.gz -I $RNA/Byssus_2.fq.gz -o byssus_1.fq.gz -O byssus_2.fq.gz -w 24
+fastp -i $RNA/Gen_1.fq.gz -I $RNA/Gen_2.fq.gz -o gen_1.fq.gz -O gen_2.fq.gz -w 24
+fastp -i $RNA/Gill_1.fq.gz -I $RNA/Gill_2.fq.gz -o gill_1.fq.gz -O gill_2.fq.gz -w 24
+fastp -i $RNA/Labial_1.fq.gz -I $RNA/Labial_2.fq.gz -o labial_1.fq.gz -O labial_2.fq.gz -w 24
+fastp -i $RNA/Liver_1.fq.gz -I $RNA/Liver_2.fq.gz -o liver_1.fq.gz -O liver_2.fq.gz -w 24
+fastp -i $RNA/Mantle_1.fq.gz -I $RNA/Mantle_2.fq.gz -o mantle_1.fq.gz -O mantle_2.fq.gz -w 24
+
+# Trinity v2.14.0 https://github.com/trinityrnaseq/trinityrnaseq
+# build de novo transcriptome assembly
+# Output file is trinity_out_dir.Trinity.fasta, but I simplify this as Trinity.fasta.
+export PATH=/home/LINE/local/app/salmon-1.8.0/bin:$PATH
+export PATH=/home/LINE/local/app/jellyfish-2.3.0/bin:$PATH
+export PATH=/home/LINE/local/app/samtools-1.15.1:$PATH
+export PATH=/home/LINE/local/app/bowtie2-2.4.5:$PATH
+Trinity --seqType fq --max_memory 30G --CPU 9 -left adductor_1.fq.gz,byssus_1.fq.gz,gen_1.fq.gz,gill_1.fq.gz,labial_1.fq.gz,liver_1.fq.gz,mantle_1.fq.gz -right adductor_2.fq.gz,byssus_2.fq.gz,gen_2.fq.gz,gill_2.fq.gz,labial_2.fq.gz,liver_2.fq.gz,mantle_2.fq.gz
+
+# build genome-guided transcriptome assembly
+# hisat2 v2.2.1 https://github.com/DaehwanKimLab/hisat2
+hisat2-build -p 9 ppedb.fasta ppedb.fasta
+hisat2 -q -p 9 -x ppedb.fasta \
+-1 adductor_1.fq.gz,byssus_1.fq.gz,gen_1.fq.gz,gill_1.fq.gz,labial_1.fq.gz,liver_1.fq.gz,mantle_1.fq.gz 
+-2 adductor_2.fq.gz,byssus_2.fq.gz,gen_2.fq.gz,gill_2.fq.gz,labial_2.fq.gz,liver_2.fq.gz,mantle_2.fq.gz -S ppedb.sam
+samtools view -@ 9 -bS ppedb.sam -o ppedb.bam
+samtools sort ppedb.bam -@ 9 -o ppedb.sorted.bam
+samtools index ppedb.sorted.bam
+# Output file is Trinity-GG.fasta
+Trinity --genome_guided_bam ppedb.sorted.bam --max_memory 25G --genome_guided_max_intron 20000 --CPU 11
+
+# Pacbio iso-seq transcriptome assembly based on seven tissues from Pteria penguin.
+# iso-seq .bam files are Ppe.2_D03.subreads.bam, Ppe.3_B06.subreads.bam
+# iso-seq pipeline v3.7.0 https://github.com/PacificBiosciences/pbbioconda
+# The output file clustered.hq.fasta.gz is used for next step.
+ccs ${path_to_iso-seq}/Ppe.2_D03.subreads.bam D03.ccs.bam --min-rq 0.9 -j 8
+ccs ${path_to_iso-seq}/Ppe.3_B06.subreads.bam B06.ccs.bam --min-rq 0.9 -j 8
+lima B06.ccs.bam primers.fasta B06.fl.bam -j 8 --isoseq --dump-clips --peek-guess
+lima D03.ccs.bam primers.fasta D03.fl.bam -j 8 --isoseq --dump-clips --peek-guess
+isoseq3 refine B06.fl.5p--3p.bam primers.fasta B06.flnc.bam --require-polya -j 8
+isoseq3 refine D03.fl.5p--3p.bam primers.fasta D03.flnc.bam --require-polya -j 8
+ls B06.flnc.bam D03.flnc.bam > flnc.fofn
+isoseq3 cluster flnc.fofn clustered.bam --verbose --use-qvs -j 8
+# SQANTI3 v5.0 https://github.com/ConesaLab/SQANTI3 
+# The output file is ppe.hq.collapsed.min_fl_2.filtered.gff and I simplify its name as iso-seq.collapsed.gtf in following analysis
+minimap2 -t 8 -ax splice -uf --secondary=no -C5 -O6,24 -B4 ppedb.fasta clustered.hq.fasta.gz > hq.fasta.sam
+sort -k 3,3 -k 4,4n hq.fasta.sam > hq.fasta.sorted.sam
+collapse_isoforms_by_sam.py --input clustered.hq.fasta -s hq.fasta.sorted.sam --dun-merge-5-shorter -o ppe.hq
+get_abundance_post_collapse.py ppe.hq.collapsed ../../1-pacbio/clustered.cluster_report.csv
+filter_by_count.py --dun_use_group_count ppe.hq.collapsed
+filter_away_subset.py ppe.hq.collapsed.min_fl_2
+
+# Ab initio annotation based on RNA-seq database
+# Use BRAKER v2.1.6 https://github.com/Gaius-Augustus/BRAKER
+# The output file for next analysis is augustus.hints.gff3
+braker.pl --cores 18 --species=Ppe --genome=ppedb.fasta.masked --softmasking --bam=ppedb.sorted.bam --gff3 --CDBTOOLS_PATH=${path_to_cdbfasta/cdbyank} --GENEMARK_PATH=${path_to_GeneMark-ET}
+
+# Transcriptome annotation based on RNA-seq and iso-seq database.
+# Use PASApipeline v2.5.2 for gene structure prediction
+# iso-seq.collapsed.gtf is the ppe.hq.collapsed.min_fl_2.filtered.gff
+cat Trinity.fasta Trinity-GG.fasta > transcripts.fasta
+${path_to_PASApipeline}/bin/seqclean transcripts.fasta -c 10
+${path_to_PASApipeline}/bin/seqclean Trinity.fasta -c 10
+perl ${path_to_PASApipeline}/misc_utilities/accession_extractor.pl <Trinity.fasta.clean > tdn.accs
+perl ${path_to_PASApipeline}/Launch_PASA_pipeline.pl -c alignAssembly.config -C -R -g ppedb.fasta -t transcripts.fasta.clean -T -u transcripts.fasta --TDN tdn.accs --ALIGNERS gmap,blat,minimap2 --CPU 24 --TRANSDECODER --stringent_alignment_overlap 30.0 --trans_gtf iso-seq.collapsed.gtf
+# Content in alignAssembly.config：
+## templated variables to be replaced exist as <__var_name__>
+
+# database settings
+DATABASE=/line/MCY/Ppe_byssus/01_Genome/output/05_annotation/structure_prediction/pasa/align/ppe_pasa
+
+#######################################################
+# Parameters to specify to specific scripts in pipeline
+# create a key = "script_name" + ":" + "parameter" 
+# assign a value as done above.
+
+#script validate_alignments_in_db.dbi
+validate_alignments_in_db.dbi:--MIN_PERCENT_ALIGNED=90
+validate_alignments_in_db.dbi:--MIN_AVG_PER_ID=95
+
+#script subcluster_builder.dbi
+subcluster_builder.dbi:-m=50
+
+# Add Ab initio annotation from Transdecoder
+perl /home/LINE/local/app/PASApipeline-v2.5.2/scripts/pasa_asmbls_to_training_set.dbi --pasa_transcripts_fasta ppe_pasa.assemblies.fasta --pasa_transcripts_gff3 ppe_pasa.pasa_assemblies.gff3
+
+# Combines ab intio gene predictions and transcript alignments into weighted consensus gene structures.
+# EVidenceModeler (simplify as EVM) software v1.1.1 https://evidencemodeler.github.io/
+cat ../../braker2/braker/augustus.hints.gff3 ../align/ppe_pasa.assemblies.fasta.transdecoder.genome.gff3 > abinitio_gene_predictions.gff3
+cp ../align/ppe_pasa.pasa_assemblies.gff3 transcript_alignments.gff3
+${EVMPath}/partition_EVM_inputs.pl --genome ppedb.fasta --gene_predictions abinitio_gene_predictions.gff3 --transcript_alignments transcript_alignments.gff3 --segmentSize 500000 --overlapSize 60000 --partition_listing partitions_list.out --repeats ppedb.fasta.out.gff
+${EVMPath}/write_EVM_commands.pl --genome ppedb.fasta --weights /line/MCY/Ppe_byssus/01_Genome/output/05_annotation/structure_prediction/pasa/evm/evm_weights.txt --gene_predictions abinitio_gene_predictions.gff3 --transcript_alignments transcript_alignments.gff3 --output_file_name evm.out --partitions partitions_list.out --repeats ppedb.fasta.out.gff > commands.list
+/home/LINE/local/app/ParaFly-0.1.0/bin/ParaFly -shuffle -v -CPU 26 -c commands.list -failed_cmds commands.list.failed
+${EVMPath}/recombine_EVM_partial_outputs.pl --partitions partitions_list.out --output_file_name evm.out
+${EVMPath}/convert_EVM_outputs_to_GFF3.pl  --partitions partitions_list.out --output evm.out --genome ppedb.fasta
+find . -name evm.out.gff3 -exec cat '{}' \; >> ppedb.fasta.evm.gff3
+
+# PASA software update gene annotations to incorporate the PASA alignment evidence in two circles.
+perl /home/LINE/local/app/PASApipeline-v2.5.2/Launch_PASA_pipeline.pl -c annotCompare_all.config -A -g ppedb.fasta -t transcripts.fasta.clean -T -u transcripts.fasta --trans_gtf iso-seq.collapsed.gtf -L --annots ppedb.fasta.evm.gff3
+perl /home/LINE/local/app/PASApipeline-v2.5.2/Launch_PASA_pipeline.pl -c annotCompare_all.config -A -g ppedb.fasta -t transcripts.fasta.clean -T -u transcripts.fasta --trans_gtf iso-seq.collapsed.gtf -L --annots ppe_pasa.gene_structures_post_PASA_updates.*.gff3
+#annotCompare_all.config
+## templated variables to be replaced exist as <__var_name__>
+
+# database settings
+DATABASE=/line/MCY/Ppe_byssus/01_Genome/output/05_annotation/structure_prediction/pasa/update-all/ppe_pasa
+
+#######################################################
+# Parameters to specify to specific scripts in pipeline
+# create a key = "script_name" + ":" + "parameter" 
+# assign a value as done above.
+
+#script cDNA_annotation_comparer.dbi
+cDNA_annotation_comparer.dbi:--MIN_PERCENT_OVERLAP=<__MIN_PERCENT_OVERLAP__>
+cDNA_annotation_comparer.dbi:--MIN_PERCENT_PROT_CODING=<__MIN_PERCENT_PROT_CODING__>
+cDNA_annotation_comparer.dbi:--MIN_PERID_PROT_COMPARE=<__MIN_PERID_PROT_COMPARE__>
+cDNA_annotation_comparer.dbi:--MIN_PERCENT_LENGTH_FL_COMPARE=<__MIN_PERCENT_LENGTH_FL_COMPARE__>
+cDNA_annotation_comparer.dbi:--MIN_PERCENT_LENGTH_NONFL_COMPARE=<__MIN_PERCENT_LENGTH_NONFL_COMPARE__>
+cDNA_annotation_comparer.dbi:--MIN_FL_ORF_SIZE=<__MIN_FL_ORF_SIZE__>
+cDNA_annotation_comparer.dbi:--MIN_PERCENT_ALIGN_LENGTH=<__MIN_PERCENT_ALIGN_LENGTH__>
+cDNA_annotation_comparer.dbi:--MIN_PERCENT_OVERLAP_GENE_REPLACE=<__MIN_PERCENT_OVERLAP_GENE_REPLACE__>
+cDNA_annotation_comparer.dbi:--STOMP_HIGH_PERCENTAGE_OVERLAPPING_GENE=<__STOMP_HIGH_PERCENTAGE_OVERLAPPING_GENE__>
+cDNA_annotation_comparer.dbi:--TRUST_FL_STATUS=<__TRUST_FL_STATUS__>
+cDNA_annotation_comparer.dbi:--MAX_UTR_EXONS=<__MAX_UTR_EXONS__>
+cDNA_annotation_comparer.dbi:--GENETIC_CODE=<__GENETIC_CODE__>
+
+# Clean up annotation file, make gene IDs and generate common accompanying files
+export PATH=/home/LINE/local/app/PASApipeline-v2.5.2/misc_utilities/:$PATH
+gff3_file_simple_acc_resetter.pl ppe_pasa.gene_structures_post_PASA_updates.10422.gff3 ppedb.fasta > ppedb.final_annotation.gff3
+gff3_file_to_proteins.pl ppedb.final_annotation.gff3 ppedb.fasta > ppedb.final_annotation.proteins.fasta
+gff3_file_to_proteins.pl ppedb.final_annotation.gff3 ppedb.fasta CDS > ppedb.final_annotation.CDS.fasta
+gff3_file_to_proteins.pl ppedb.final_annotation.gff3 ppedb.fasta cDNA > ppedb.final_annotation.transcripts.fasta
+gff3_file_promoter_extractor.pl --genes ppedb.final_annotation.gff3 --genome ppedb.fasta > ppedb.final_annotation.promoters.fasta
+
+##### Functional Annotation ##### 
+# Functional annotation using interproscan v5.52 software https://github.com/ebi-pf-team/interproscan
+# PS: remove the sign "*"
+cp ../../structure_prediction/pasa/final-annotation/ppedb.final_annotation.proteins.fasta pep_nostopamino.fasta
+sed -i "s/*//g" pep_nostopamino.fasta
+interproscan.sh -appl Pfam -f TSV -i pep_nostopamino.fasta -cpu 24 -b IPRSCAN_annotation -goterms -iprlookup -pa
+
+### Functional annotation using swiss-prot database (version 2022-05-25)
+swissprot=${PATH_TO_SWISSPROT}/swissprot-220525.fasta
+blastp -query ppedb.final_annotation.proteins.fasta -out swissprot_blast \
+	-db ${swissprot} -evalue 1e-5 -outfmt 5 -num_threads 6
+/home/MCY/App/useful_scripts/annot_tools/blast_xml_parse.py -i swissprot_blast.xml -o swissprot_annotation.txt -q ppedb.final_annotation.proteins.fasta
