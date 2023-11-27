@@ -1,0 +1,4 @@
+ppedb.fasta.out.7z	GFF3 Annotation File for Repetitive elements
+ppedb.final_annotation.7z	GFF3 Annotation File for Gene Structure
+ppedb.final_annotation.CDS.7z	Fasta File Containing the CDS Region for Each Gene
+ppedb.final_annotation.proteins.7z	Fasta File Containing the Amino Acid Sequence for Each Gene
